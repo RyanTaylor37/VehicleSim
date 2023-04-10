@@ -96,3 +96,50 @@ function example_client(host::IPAddr=IPv4(0), port=4444)
     end
 
 end
+
+
+function auto_client(host::IPAddr=IPv4(0), port=4444)
+    socket = Sockets.connect(host, port)
+    map_segments = training_map()
+    quit_channel = Channel{Bool}(1)
+
+    gps_channel = Channel{GPSMeasurement}(32)
+    imu_channel = Channel{IMUMeasurement}(32)
+    cam_channel = Channel{CameraMeasurement}(32)
+    gt_channel = Channel{GroundTruthMeasurement}(32)
+
+    localization_state_channel = Channel{MyLocalizationType}(1)
+    perception_state_channel = Channel{MyPerceptionType}(1)
+
+    target_map_segment = 0 # (not a valid segment, will be overwritten by message)
+    ego_vehicle_id = 0 # (not a valid id, will be overwritten by message. This is used for discerning ground-truth messages)
+    put!(quit_channel, true)
+    @info "Press 'q' at any time to terminate vehicle."
+    @async while fetch(quit_channel)
+        key = get_c()
+        if key == 'q'
+            # terminate vehicle
+            put!(quit_channel, true)
+            target_velocity = 0.0
+            steering_angle = 0.0
+            @info "Terminating Keyboard Client."
+        measurement_msg = deserialize(socket)
+        target_map_segment = meas.target_segment
+        ego_vehicle_id = meas.vehicle_id
+        for meas in measurement_msg.measurements
+            if meas isa GPSMeasurement
+                !isfull(gps_channel) && put!(gps_channel, meas)
+            elseif meas isa IMUMeasurement
+                !isfull(imu_channel) && put!(imu_channel, meas)
+            elseif meas isa CameraMeasurement
+                !isfull(cam_channel) && put!(cam_channel, meas)
+            elseif meas isa GroundTruthMeasurement
+                !isfull(gt_channel) && put!(gt_channel, meas)
+            end
+        end
+    end
+
+    @async localize(gps_channel, imu_channel, localization_state_channel, quit_channel)
+    @async perception(cam_channel, localization_state_channel, perception_state_channel, quit_channel)
+    @async path_planning(localization_state_channel, perception_state_channel, map, socket, quit_channel)
+end

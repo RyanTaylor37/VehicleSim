@@ -57,6 +57,8 @@ function server(max_vehicles=1,
     state_channels = Dict(id=>Channel{MechanismState}(1) for id in 1:max_vehicles)
     cmd_channels = Dict(id=>Channel{VehicleCommand}(1) for id in 1:max_vehicles)
     meas_channels = Dict(id=>Channel{MeasurementMessage}(1) for id in 1:max_vehicles)
+    
+    ##### SHUTDOWn Channel #####
     shutdown_channel = Channel{Bool}(1)
 
     for vehicle_id in 1:max_vehicles
@@ -76,6 +78,9 @@ function server(max_vehicles=1,
         errormonitor(@async sim_car(all_visualizers, cmd_channels[vehicle_id], state_channels[vehicle_id], vehicle, vehicle_id))
         vehicles[vehicle_id] = vehicle
     end
+
+    ### Added in to give spawing road segment #######################
+    print(spawn_points)
 
     measure_vehicles(map, 
                      vehicles, 
