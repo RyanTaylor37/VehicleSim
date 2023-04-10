@@ -32,7 +32,7 @@ function localize(gps_channel, imu_channel, localization_state_channel)
     end 
 end
 
-function perception(cam_meas_channel, localization_state_channel, perception_state_channel)
+function perception(cam_meas_channel, localization_state_channel, perception_state_channel, socket,)
     # set up stuff
     while true
         fresh_cam_meas = []
