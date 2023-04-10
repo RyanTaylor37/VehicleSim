@@ -4,7 +4,7 @@ struct MyLocalizationType
 end
 
 struct MyPerceptionType
-    field1::Int1
+    field1::Int
     field2::Float64
 end
 
@@ -32,7 +32,7 @@ function localize(gps_channel, imu_channel, localization_state_channel)
     end 
 end
 
-function perception(cam_meas_channel, localization_state_channel, perception_state_channel, socket,)
+function perception(cam_meas_channel, localization_state_channel, perception_state_channel,)
     # set up stuff
     while true
         fresh_cam_meas = []

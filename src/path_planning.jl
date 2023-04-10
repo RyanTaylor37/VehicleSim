@@ -1,3 +1,4 @@
+#=
 function simulate(;
     rng = MersenneTwister(420),
     sim_steps = 100, 
@@ -122,22 +123,22 @@ function generate_trajectory(ego, V2, V3, a¹, b¹, a², b², callbacks, traject
     cmd = VehicleCommand(steering_angle, target_vel, true)
     serialize(socket, cmd)
 end
+=#
 
 function path_planning(localization_state_channel, 
     perception_state_channel, 
     map, 
     target_road_segment_id, 
-    socket,
-    quit_channel)
+    socket)
     
     # do some setup
-    while fetch(quit_channel)
+    while true 
         latest_localization_state = fetch(localization_state_channel)
         latest_perception_state = fetch(perception_state_channel)
 
         # figure out what to do ... setup motion planning problem etc
         steering_angle = 0.0
-        target_vel = 0.0
+        target_vel = 1.0
         cmd = VehicleCommand(steering_angle, target_vel, true)
         serialize(socket, cmd)
     end

@@ -21,14 +21,12 @@ using DifferentialEquations
 include("view_car.jl")
 include("objects.jl")
 include("sim.jl")
+include("path_planning.jl")
 include("client.jl")
 include("control.jl")
 include("sink.jl")
 include("measurements.jl")
 include("map.jl")
-include("example_project.jl") #delete ltr 
-include("path_planning.jl")
-include("trajectory_functions.jl")
 
 
 export server, shutdown!, keyboard_client
