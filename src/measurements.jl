@@ -1,5 +1,14 @@
 abstract type Measurement end
 
+struct MyLocalizationType <: Measurement
+    time::Float64
+end
+
+struct MyPerceptionType <: Measurement
+    time::Float64
+end
+
+
 """
 Records lat/long measurements (expressed as first and second coordinates of map frame)
 of GPS sensor.

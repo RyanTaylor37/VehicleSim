@@ -47,3 +47,9 @@ julia> shutdown!(s)
 # Writing an autonomous vehicle client
 
 The file example_project.jl outlines a recommended architecture for ingesting sensor messages and creating vehicle commands.
+
+
+
+# Connect to Follow Cam
+
+After client for controlling car generated. IT will provide an ip address to be put into web browser to follow vehicle 

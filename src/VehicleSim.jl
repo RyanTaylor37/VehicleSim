@@ -29,6 +29,6 @@ include("measurements.jl")
 include("map.jl")
 
 
-export server, shutdown!, keyboard_client
+export server, shutdown!, keyboard_client, auto_client
 
 end
