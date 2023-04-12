@@ -37,7 +37,7 @@ function keyboard_client(host::IPAddr=IPv4(0), port=4444; v_step = 1.0, s_step =
                 num_gps += 1
             end
         end
-  #      @info "Measurements received: $num_gt gt; $num_cam cam; $num_imu imu; $num_gps gps"
+        @info "Measurements received: $num_gt gt; $num_cam cam; $num_imu imu; $num_gps gps"
     end
     
     target_velocity = 0.0
@@ -102,8 +102,10 @@ end
 function auto_client(host::IPAddr=IPv4(0), port=4444)
     socket = Sockets.connect(host, port)
     (peer_host, peer_port) = getpeername(socket)
-    
+
     msg = deserialize(socket) # Visualization info
+    @info msg
+
     map_segments = training_map()
     quit_channel = Channel{Bool}(1)
 
@@ -117,9 +119,10 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
 
     target_map_segment = 0 # (not a valid segment, will be overwritten by message)
     ego_vehicle_id = 0 # (not a valid id, will be overwritten by message. This is used for discerning ground-truth messages)
-    put!(quit_channel, true)
+    put!(quit_channel, false)
     @info "Press 'q' at any time to terminate vehicle."
-    @async while fetch(quit_channel) && isopen(socket)
+
+    @async while !fetch(quit_channel) && isopen(socket)
         key = get_c()
         if key == 'q'
             # terminate vehicle
@@ -128,8 +131,8 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
             steering_angle = 0.0
             @info "Terminating Keyboard Client."
         end 
-        #=  ######## Add in ltr ###############
         measurement_msg = deserialize(socket)
+        
         target_map_segment = meas.target_segment
         ego_vehicle_id = meas.vehicle_id
         for meas in measurement_msg.measurements
@@ -143,10 +146,11 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
                 !isfull(gt_channel) && put!(gt_channel, meas)
             end
         end
-        =#
+        
     end
 
     #=  ######## Add in ltr ############### 
+    #### Zygote pkg autodiff, symbolic diff, forwdiff ####
     @async while fetch(quit_channel) && isopen(socket)
         localize(gps_channel, imu_channel, localization_state_channel)
     end 
@@ -154,7 +158,10 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
         perception(cam_channel, localization_state_channel, perception_state_channel)
     end 
     =#
-    @async while fetch(quit_channel) && isopen(socket)
+
+    #diegsters algorithm find shortest path in cyclic directed graph (edmonds algo)  import GraphFlows
+    target_road_segment_id = 3
+    @async while !fetch(quit_channel) && isopen(socket)
         path_planning(localization_state_channel, perception_state_channel, map,target_road_segment_id,socket)
     end 
 end

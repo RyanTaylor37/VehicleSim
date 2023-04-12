@@ -125,6 +125,10 @@ function generate_trajectory(ego, V2, V3, a¹, b¹, a², b², callbacks, traject
 end
 =#
 
+function find_route()
+
+end 
+
 function path_planning(localization_state_channel, 
     perception_state_channel, 
     map, 
