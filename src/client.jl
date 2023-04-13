@@ -74,29 +74,6 @@ function keyboard_client(host::IPAddr=IPv4(0), port=4444; v_step = 1.0, s_step =
     end
 end
 
-function example_client(host::IPAddr=IPv4(0), port=4444)
-    socket = Sockets.connect(host, port)
-    map_segments = training_map()
-    (; chevy_base) = load_mechanism()
-
-    @async while isopen(socket)
-        state_msg = deserialize(socket)
-    end
-   
-    shutdown = false
-    persist = true
-    while isopen(socket)
-        position = state_msg.q[5:7]
-        @info position
-        if norm(position) >= 100
-            shutdown = true
-            persist = false
-        end
-        cmd = VehicleCommand(0.0, 2.5, persist, shutdown)
-        serialize(socket, cmd) 
-    end
-
-end
 
 
 function auto_client(host::IPAddr=IPv4(0), port=4444)
@@ -121,18 +98,28 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     ego_vehicle_id = 0 # (not a valid id, will be overwritten by message. This is used for discerning ground-truth messages)
     put!(quit_channel, false)
     @info "Press 'q' at any time to terminate vehicle."
+    key_error = 0
+    path_error = 0
 
+    println("key_error ", key_error+=1)
     @async while !fetch(quit_channel) && isopen(socket)
+        println("key_error ", key_error+=1)
         key = get_c()
         if key == 'q'
+            println("key_error ", key_error+=1)
             # terminate vehicle
+            take!(quit_channel)
             put!(quit_channel, true)
             target_velocity = 0.0
             steering_angle = 0.0
+            cmd = VehicleCommand(steering_angle, target_vel, true)
+            serialize(socket, cmd)
             @info "Terminating Keyboard Client."
+            println("key_error ", key_error+=1)
         end 
+        println("key_error ", key_error+=1)
+        #=
         measurement_msg = deserialize(socket)
-        
         target_map_segment = meas.target_segment
         ego_vehicle_id = meas.vehicle_id
         for meas in measurement_msg.measurements
@@ -146,7 +133,7 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
                 !isfull(gt_channel) && put!(gt_channel, meas)
             end
         end
-        
+        =#
     end
 
     #=  ######## Add in ltr ############### 
@@ -158,10 +145,13 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
         perception(cam_channel, localization_state_channel, perception_state_channel)
     end 
     =#
-
     #diegsters algorithm find shortest path in cyclic directed graph (edmonds algo)  import GraphFlows
+    println("path_error ", path_error+=1)
     target_road_segment_id = 3
+    println("path_error quit_channel:  ", fetch(quit_channel), " socket: ", isopen(socket))
     @async while !fetch(quit_channel) && isopen(socket)
-        path_planning(localization_state_channel, perception_state_channel, map,target_road_segment_id,socket)
+        
+        path_planning(socket)
+
     end 
 end
