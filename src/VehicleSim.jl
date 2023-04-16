@@ -15,7 +15,6 @@ using Suppressor
 using Sockets
 using Serialization
 using StaticArrays
-using DifferentialEquations
 
 #### Add in order of reference#####
 include("view_car.jl")
