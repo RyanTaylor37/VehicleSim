@@ -95,8 +95,13 @@ function rigid_body_dynamics(position, quaternion, velocity, angular_vel, Δt)
     r = angular_vel
     mag = norm(r)
 
-    sᵣ = cos(mag*Δt / 2.0)
-    vᵣ = sin(mag*Δt / 2.0) * r/mag
+    if mag < 1e-5
+        sᵣ = 1.0
+        vᵣ = zeros(3)
+    else
+        sᵣ = cos(mag*Δt / 2.0)
+        vᵣ = sin(mag*Δt / 2.0) * axis
+    end
 
     sₙ = quaternion[1]
     vₙ = quaternion[2:4]
@@ -168,7 +173,7 @@ function multiply_transforms(T1, T2)
     T = T[1:3, :]
 end
 
-function gps(vehicle, state_channel, meas_channel; sqrt_meas_cov = Diagonal([1.0, 1.0]), max_rate=60.0)
+function gps(vehicle, state_channel, meas_channel; sqrt_meas_cov = Diagonal([1.0, 1.0]), max_rate=20.0)
     min_Δ = 1.0/max_rate
     t = time()
     T = get_gps_transform()
@@ -190,7 +195,7 @@ function gps(vehicle, state_channel, meas_channel; sqrt_meas_cov = Diagonal([1.0
     end
 end
 
-function imu(vehicle, state_channel, meas_channel; sqrt_meas_cov = Diagonal([0.01, 0.01, 0.01, 0.01, 0.01, 0.01]), max_rate=60.0)
+function imu(vehicle, state_channel, meas_channel; sqrt_meas_cov = Diagonal([0.01, 0.01, 0.01, 0.01, 0.01, 0.01]), max_rate=20.0)
     min_Δ = 1.0/max_rate
     t = time()
     T_body_imu = get_imu_transform()
@@ -309,7 +314,7 @@ function cameras(vehicles, state_channels, cam_channels; max_rate=10.0, focal_le
     end
 end
 
-function ground_truth(vehicles, state_channels, gt_channels; max_rate=20.0) 
+function ground_truth(vehicles, state_channels, gt_channels; max_rate=10.0) 
     min_Δ = 1.0/max_rate
     t = time()
     num_vehicles = length(vehicles)
