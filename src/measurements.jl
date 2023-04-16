@@ -2,6 +2,12 @@ abstract type Measurement end
 
 struct MyLocalizationType <: Measurement
     time::Float64
+    vehicle_id::Int
+    position::SVector{3, Float64} # position of center of vehicle
+    orientation::SVector{4, Float64} # represented as quaternion
+    velocity::SVector{3, Float64}
+    angular_velocity::SVector{3, Float64} # angular velocity around x,y,z axes
+    size::SVector{3, Float64} # length, width, height of 3d bounding box centered at (position/orientation)
 end
 
 struct MyPerceptionType <: Measurement

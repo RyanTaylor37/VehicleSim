@@ -4,6 +4,14 @@ struct VehicleCommand
     controlled::Bool
 end
 
+isfull(ch::Channel) = begin
+    if ch.sz_max===0
+        isready(ch)
+    else
+        length(ch.data) ≥ ch.sz_max
+    end
+end
+
 function get_c()
     ret = ccall(:jl_tty_set_mode, Int32, (Ptr{Cvoid},Int32), stdin.handle, true)
     ret == 0 || error("unable to switch to raw mode")
@@ -95,14 +103,57 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     #perception_state_channel = Channel{MyPerceptionType}(1)
 
     #target_map_segment = 0 # (not a valid segment, will be overwritten by message)
-    #ego_vehicle_id = 0 # (not a valid id, will be overwritten by message. This is used for discerning ground-truth messages)
+    ego_vehicle_id = 0 # (not a valid id, will be overwritten by message. This is used for discerning ground-truth messages)
     put!(quit_channel, false)
     @info "Press 'q' at any time to terminate vehicle."
 
+    routes::Vector{Int} = route(38,32)
+    midpoint_paths::Vector{MidPath} = midpoints(routes)
 
-    @async while !fetch(quit_channel) && isopen(socket)
+    @info "Measurement populator thread entering intialization"
+    errormonitor(@async while !fetch(quit_channel) && isopen(socket)
         sleep(0.001)
+        
 
+        local measurement_msg
+        received = false
+        while true
+            @async eof(socket)
+            if bytesavailable(socket) > 0
+                measurement_msg = deserialize(socket)
+                received = true
+            else
+                break
+            end
+        end
+        
+        num_cam = 0
+        num_imu = 0
+        num_gps = 0
+        num_gt = 0
+
+        !received && continue
+        target_map_segment = measurement_msg.target_segment
+        ego_vehicle_id = measurement_msg.vehicle_id
+
+        for meas in measurement_msg.measurements
+            if meas isa GPSMeasurement
+                !isfull(gps_channel) && put!(gps_channel, meas)
+            elseif meas isa IMUMeasurement
+                !isfull(imu_channel) && put!(imu_channel, meas)
+            elseif meas isa CameraMeasurement
+                !isfull(cam_channel) && put!(cam_channel, meas)
+            elseif meas isa GroundTruthMeasurement
+                !isfull(gt_channel) && put!(gt_channel, meas)
+            end
+        end
+    end)
+
+    @async fake_localize(gt_channel, localization_state_channel, ego_vehicle_id,quit_channel)
+    @async path_planning(socket,quit_channel, localization_state_channel, routes, midpoint_paths)
+
+    while !fetch(quit_channel) && isopen(socket)
+        @info "Key Catcher Loop entered"
         key = get_c()
         if key == 'q'
             # terminate vehicle
@@ -110,38 +161,9 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
             put!(quit_channel, true)         
             target_velocity = 0.0
             steering_angle = 0.0
-            @info "Terminating Keyboard Client."
+            @info "Terminating Auto Client."
         end
-
-        state_msg = deserialize(socket)
-
-        measurements = state_msg.measurements 
-        
-        num_cam = 0
-        num_imu = 0
-        num_gps = 0
-        num_gt = 0
-        for meas in measurements
-            if meas isa GroundTruthMeasurement
-                num_gt += 1
-                !isFull(gt_channel) && put!(gt_channel, meas)
-            elseif meas isa CameraMeasurement
-                num_cam += 1
-            elseif meas isa IMUMeasurement
-                num_imu += 1
-            elseif meas isa GPSMeasurement
-                num_gps += 1
-            end
-        end
-    end
-
-    routes::Vector{Int} = route(38,32)
-    midpoint_paths::Vector{MidPath} = midpoints(routes)
-    
-
-    @async fake_localize(gt_channel, localization_state_channel, ego_id,quit_channel)
-    @async path_planning(socket,quit_channel, localization_state_channel, routes)
-
+    end 
     #=  ######## Add in ltr ############### 
     #### Zygote pkg autodiff, symbolic diff, forwdiff ####
     @async while fetch(quit_channel) && isopen(socket)

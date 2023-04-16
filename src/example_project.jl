@@ -114,7 +114,7 @@ function my_client(host::IPAddr=IPv4(0), port=4444)
         ego_vehicle_id = measurement_msg.vehicle_id
         for meas in measurement_msg.measurements
             if meas isa GPSMeasurement
-                !isfull(gps_channel) && put!(gps_channel, meas)
+                !isready(gps_channel) && put!(gps_channel, meas)
             elseif meas isa IMUMeasurement
                 !isfull(imu_channel) && put!(imu_channel, meas)
             elseif meas isa CameraMeasurement

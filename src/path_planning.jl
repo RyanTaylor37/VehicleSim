@@ -101,7 +101,8 @@ function path_planning(
     socket,
     quit_channel,
     localization_state_channel,
-    routes
+    routes,
+    midpoint_paths
     )
     #=
     localization_state_channel, 
@@ -127,10 +128,11 @@ function path_planning(
     first_iter = true
 
     while !fetch(quit_channel) 
-        
-        wait(localization_state_channel)
-        meas = take!(localization_state_channel)
+        @info "path_planning thread loop initialized"
+        meas = fetch(localization_state_channel)
+        @info "$meas"
 
+        #=
         ego = SA[meas.position[1] ; meas.position[2]]
 
         if (iterateMidPath(ego, midpoint_paths[m]))
@@ -160,6 +162,7 @@ function path_planning(
         first_iter = false
         cmd = VehicleCommand(steering_angle, target_velocity, !fetch(quit_channel))
         serialize(socket, cmd)
+        =#
     end 
         
   
