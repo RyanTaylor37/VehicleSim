@@ -2,7 +2,13 @@
 
 julia_version = "1.8.5"
 manifest_format = "2.0"
-project_hash = "7381ce4e855d083b136f19450235c53586bd3a58"
+project_hash = "4c07f7d8e8e24719b67255d1646a6d8dbb633472"
+
+[[deps.AStarSearch]]
+deps = ["DataStructures"]
+git-tree-sha1 = "b43cbd7712b6ad5efe5ef46463a1a82ac9949f09"
+uuid = "e6cbe913-2b79-4cc5-848a-e3bbf8537828"
+version = "0.6.2"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]

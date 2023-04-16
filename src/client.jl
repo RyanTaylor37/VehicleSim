@@ -83,7 +83,7 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     msg = deserialize(socket) # Visualization info
     @info msg
 
-    map_segments = training_map()
+    #map_segments = training_map()
     quit_channel = Channel{Bool}(1)
 
     gps_channel = Channel{GPSMeasurement}(32)
@@ -92,49 +92,61 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     gt_channel = Channel{GroundTruthMeasurement}(32)
 
     localization_state_channel = Channel{MyLocalizationType}(1)
-    perception_state_channel = Channel{MyPerceptionType}(1)
+    #perception_state_channel = Channel{MyPerceptionType}(1)
 
-    target_map_segment = 0 # (not a valid segment, will be overwritten by message)
-    ego_vehicle_id = 0 # (not a valid id, will be overwritten by message. This is used for discerning ground-truth messages)
+    #target_map_segment = 0 # (not a valid segment, will be overwritten by message)
+    #ego_vehicle_id = 0 # (not a valid id, will be overwritten by message. This is used for discerning ground-truth messages)
     put!(quit_channel, false)
     @info "Press 'q' at any time to terminate vehicle."
-    key_error = 0
-    path_error = 0
 
-    println("key_error ", key_error+=1)
+
+    i=0
+    j=0
+
     @async while !fetch(quit_channel) && isopen(socket)
-        println("key_error ", key_error+=1)
+        sleep(0.001)
+
         key = get_c()
         if key == 'q'
-            println("key_error ", key_error+=1)
             # terminate vehicle
             take!(quit_channel)
-            put!(quit_channel, true)
+            put!(quit_channel, true)         
             target_velocity = 0.0
             steering_angle = 0.0
-            cmd = VehicleCommand(steering_angle, target_vel, true)
-            serialize(socket, cmd)
             @info "Terminating Keyboard Client."
-            println("key_error ", key_error+=1)
-        end 
-        println("key_error ", key_error+=1)
-        #=
-        measurement_msg = deserialize(socket)
-        target_map_segment = meas.target_segment
-        ego_vehicle_id = meas.vehicle_id
-        for meas in measurement_msg.measurements
-            if meas isa GPSMeasurement
-                !isfull(gps_channel) && put!(gps_channel, meas)
-            elseif meas isa IMUMeasurement
-                !isfull(imu_channel) && put!(imu_channel, meas)
+        end
+
+        state_msg = deserialize(socket)
+
+        measurements = state_msg.measurements 
+        
+        num_cam = 0
+        num_imu = 0
+        num_gps = 0
+        num_gt = 0
+        for meas in measurements
+            if meas isa GroundTruthMeasurement
+                num_gt += 1
+                !isFull(gt_channel) && put!(gt_channel, meas)
             elseif meas isa CameraMeasurement
-                !isfull(cam_channel) && put!(cam_channel, meas)
-            elseif meas isa GroundTruthMeasurement
-                !isfull(gt_channel) && put!(gt_channel, meas)
+                num_cam += 1
+            elseif meas isa IMUMeasurement
+                num_imu += 1
+            elseif meas isa GPSMeasurement
+                num_gps += 1
             end
         end
-        =#
     end
+
+    routes::Vector{Int} = route(38,32)
+    midpoint_paths::Vector{MidPath} = midpoints(routes)
+    
+    len1 = length(routes)
+    len2 = length(midpoint_paths)
+
+
+    @async fake_localize(gt_channel, localization_state_channel, ego_id,quit_channel)
+    @async path_planning(socket,quit_channel, localization_state_channel)
 
     #=  ######## Add in ltr ############### 
     #### Zygote pkg autodiff, symbolic diff, forwdiff ####
@@ -144,14 +156,8 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     @async while fetch(quit_channel) && isopen(socket) 
         perception(cam_channel, localization_state_channel, perception_state_channel)
     end 
-    =#
+    
     #diegsters algorithm find shortest path in cyclic directed graph (edmonds algo)  import GraphFlows
-    println("path_error ", path_error+=1)
-    target_road_segment_id = 3
-    println("path_error quit_channel:  ", fetch(quit_channel), " socket: ", isopen(socket))
-    @async while !fetch(quit_channel) && isopen(socket)
-        
-        path_planning(socket)
 
-    end 
+    =#
 end

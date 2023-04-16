@@ -1,133 +1,106 @@
-#=
-function simulate(;
-    rng = MersenneTwister(420),
-    sim_steps = 100, 
-    timestep = 0.2, 
-    traj_length = 15,
-    R = Diagonal([0.1, 0.5]),
-    lane_width = 15, 
-    lane_length = 100, 
-    num_vehicles = 7, 
-    min_r = 1.5, 
-    max_r = 3.5, 
-    max_vel = 12)
-sim_records = []
-a¹ = [0; 1]; b¹ = -lane_width / 2.0
-a² = [0; -1]; b² = -lane_width / 2.0
+# rng makes start = 32 children: 30, 28, 26, 24
+function route(goal::Int, start::Int)
 
-callbacks = create_callback_generator(traj_length, timestep, R, max_vel)
-#=
-@showprogress for t = 1:sim_steps
-    ego = vehicles[1]
-    dists = [Inf; [norm(v.state[1:2]-ego.state[1:2])-v.r-ego.r for v in vehicles[2:end]]]
-    closest = partialsortperm(dists, 1:2)
-    V2 = vehicles[closest[1]]
-    V3 = vehicles[closest[2]]
+    # temporarily have map variable but change to function parameter 
+    map::Dict{Int, RoadSegment} = training_map()
+
+    function manhattan(goal::Int, start::Int) 
+        p1 = map[goal].lane_boundaries[1].pt_b
+        p2 = map[goal].lane_boundaries[2].pt_b
+        p3 = map[start].lane_boundaries[1].pt_b
+        p4 = map[start].lane_boundaries[2].pt_b
+        
+        pgoal = (p1 + p2)/2
+        pstart = (p3 + p4)/2
     
-    trajectory = generate_trajectory(ego, V2, V3, a¹, b¹, a², b², callbacks, traj_length, timestep)
+        return sum(abs.(pgoal - pstart))
+    end 
 
-    push!(sim_records, (; vehicles=copy(vehicles), trajectory))
+    function neighbors(road::Int)
+        return map[road].children
+    end
 
-    vehicles[1] = (; state = wrap(trajectory.states[1], lane_length), r=vehicles[1].r)
+    function isgoal(goal::Int, start::Int)
+        return goal == start
+    end
     
-    foreach(i->vehicles[i] = (; state = wrap(evolve_state(vehicles[i].state, zeros(2), timestep), lane_length), vehicles[i].r), 2:num_vehicles)
-end
-=#
-end 
-
-
-function wrap(X, lane_length)
-    X_wrapped = copy(X)
-    if X_wrapped[1] > lane_length
-        X_wrapped[1] -= lane_length
+    function hash(road::Int) 
+        return road
     end
-    X_wrapped
+
+    result = astar(neighbors, start, goal; heuristic=manhattan, cost=manhattan, isgoal=isgoal, hashfn=hash, timeout=Inf, maxcost=Inf)
+    if (result.status == :success)
+        return result.path
+    else
+        return Vector{Int}[]
+    end
 end
 
+# Q comes after P always
+struct MidPath
+    midP::SVector{2,Float64}
+    midQ::SVector{2,Float64}
+    speed_limit::Float64
+    lane_types::Vector{LaneTypes}
+end
 
-function generate_trajectory(ego, V2, V3, a¹, b¹, a², b², callbacks, trajectory_length, timestep)
-    X1 = ego.state
-    X2 = V2.state
-    X3 = V3.state
-    r1 = ego.r
-    r2 = V2.r
-    r3 = V3.r
-   
-    # refine callbacks with current values of parameters / problem inputs
-    wrapper_f = function(z)
-        callbacks.full_cost_fn(z, X1, X2, X3, r1, r2, r3, a¹, b¹, a², b²)
+function midpoints(paths::Vector{Int}) 
+    # temporarily have map variable but change to function parameter 
+    map::Dict{Int, RoadSegment} = training_map()
+    n = length(paths)
+    if n == 0
+        return Vector{Path}[]
     end
-    wrapper_grad_f = function(z, grad)
-        callbacks.full_cost_grad_fn(grad, z, X1, X2, X3, r1, r2, r3, a¹, b¹, a², b²)
-    end
-    wrapper_con = function(z, con)
-        callbacks.full_constraint_fn(con, z, X1, X2, X3, r1, r2, r3, a¹, b¹, a², b²)
-    end
-    wrapper_con_jac = function(z, rows, cols, vals)
-        if isnothing(vals)
-            rows .= callbacks.full_constraint_jac_triplet.jac_rows
-            cols .= callbacks.full_constraint_jac_triplet.jac_cols
+
+    midpointPaths::Vector{MidPath} = []
+
+    for i in 1:n
+        lane = map[paths[i]]
+        midP = (lane.lane_boundaries[1].pt_a + lane.lane_boundaries[2].pt_a)/2
+        midQ = (lane.lane_boundaries[1].pt_b + lane.lane_boundaries[2].pt_b)/2
+        
+        push!(midpointPaths, MidPath(midP, midQ, lane.speed_limit, lane.lane_types)) 
+        
+        """
+        differentiate between intersection and other lane types later 
+        if lane.lane_types == intersection
+            mid = (lane.lane_boundaries[1].pt_b + map[path[i]].lane_boundaries[2].pt_b)/2
         else
-            callbacks.full_constraint_jac_triplet.full_constraint_jac_vals_fn(vals, z, X1, X2, X3, r1, r2, r3, a¹, b¹, a², b²)
+            mid = (lane.lane_boundaries[1].pt_b + map[path[i]].lane_boundaries[2].pt_b)/2
         end
-        nothing
-    end
-    wrapper_lag_hess = function(z, rows, cols, cost_scaling, λ, vals)
-        if isnothing(vals)
-            rows .= callbacks.full_lag_hess_triplet.hess_rows
-            cols .= callbacks.full_lag_hess_triplet.hess_cols
-        else
-            callbacks.full_lag_hess_triplet.full_hess_vals_fn(vals, z, X1, X2, X3, r1, r2, r3, a¹, b¹, a², b², λ, cost_scaling)
-        end
-        nothing
+        midpoints.push!(mid)
+        """
     end
 
-    #why multiply by 6? ask teacher
-    n = trajectory_length*6
-    m = length(callbacks.constraints_lb)
-    prob = Ipopt.CreateIpoptProblem(
-        n,
-        fill(-Inf, n),
-        fill(Inf, n),
-        length(callbacks.constraints_lb),
-        callbacks.constraints_lb,
-        callbacks.constraints_ub,
-        length(callbacks.full_constraint_jac_triplet.jac_rows),
-        length(callbacks.full_lag_hess_triplet.hess_rows),
-        wrapper_f,
-        wrapper_con,
-        wrapper_grad_f,
-        wrapper_con_jac,
-        wrapper_lag_hess
-    )
-
-    controls = repeat([zeros(2),], trajectory_length)
-    #states = constant_velocity_prediction(X1, trajectory_length, timestep)
-    states = repeat([X1,], trajectory_length)
-    zinit = compose_trajectory(states, controls)
-    prob.x = zinit
-
-    Ipopt.AddIpoptIntOption(prob, "print_level", 0)
-    status = Ipopt.IpoptSolve(prob)
-
-    if status != 0
-        @warn "Problem not cleanly solved. IPOPT status is $(status)."
-    end
-    states, controls = decompose_trajectory(prob.x)
-    (; states, controls, status)
-
-    ############### Added from decison making #####################
-    # figure out what to do ... setup motion planning problem etc
-    steering_angle = 0.0
-    target_vel = 0.0
-    cmd = VehicleCommand(steering_angle, target_vel, true)
-    serialize(socket, cmd)
+    return midpointPaths
 end
-=#
+
+# cross track error of vehicle point (distance between vehicle and path)
+function CTE(ego::SVector{2,Float64}, path::MidPath) 
+    midP = path.midP
+    midQ = path.midQ
+    v = [midQ[2] - midP[2]; -(midQ[1] - midP[1])]
+    r = [midP[1] - ego[1]; midP[2] - ego[2]]
+    return sum(v.*r)
+end
+
+# returns midPath that vehicle should travel should be incremented to next one
+function iterateMidPath(ego::SVector{2,Float64}, path::MidPath)
+    dist = (ego - path.midP)'*((ego - path.midP))
+    if dist < 1
+        print("dist=$dist")
+        return true
+    else
+        return false
+    end
+end
+
 
 
 function path_planning(
-    socket
+    socket,
+    quit_channel,
+    localization_state_channel
     )
     #=
     localization_state_channel, 
@@ -139,10 +112,49 @@ function path_planning(
     #latest_localization_state = fetch(localization_state_channel)
     #latest_perception_state = fetch(perception_state_channel)
     # figure out what to do ... setup motion planning problem etc
+    m = 2
+    taup = 0.1
+    taud = 0.05
+
+    target_velocity = 1
     steering_angle = 0.0
-    target_vel = 1.0
-    cmd = VehicleCommand(steering_angle, target_vel, true)
-    serialize(socket, cmd)
+    error = 0
+    init_error = 0
+    first_iter = true
+
+    while !fetch(quit_channel)
+        meas = take!(localization_state_channel)
+
+        ego = SA[meas.position[1] ; meas.position[2]]
+
+        if (iterateMidPath(ego, midpoint_paths[m]))
+            m += 1
+        end
+        
+        if (!first_iter)
+            init_error = error
+        end
+        error = CTE(ego, midpoint_paths[m-1])
+
+
+        if (first_iter)
+            dev = 0
+            init_error = error
+        else
+            dev = error-init_error
+        end
+
+        steering_angle = -taup*error - taud*dev
+        if (steering_angle > 0.5)
+            steering_angle = 0.3
+        elseif (steering_angle < -0.5)
+            steering_angle = -0.3
+        end
+        
+        first_iter = false
+        cmd = VehicleCommand(steering_angle, target_velocity, controlled)
+        serialize(socket, cmd)
+    end 
         
   
 end
