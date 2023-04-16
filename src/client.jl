@@ -138,12 +138,9 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     routes::Vector{Int} = route(38,32)
     midpoint_paths::Vector{MidPath} = midpoints(routes)
     
-    len1 = length(routes)
-    len2 = length(midpoint_paths)
-
 
     @async fake_localize(gt_channel, localization_state_channel, ego_id,quit_channel)
-    @async path_planning(socket,quit_channel, localization_state_channel)
+    @async path_planning(socket,quit_channel, localization_state_channel, routes)
 
     #=  ######## Add in ltr ############### 
     #### Zygote pkg autodiff, symbolic diff, forwdiff ####

@@ -126,7 +126,9 @@ function path_planning(
     init_error = 0
     first_iter = true
 
-    while !fetch(quit_channel)
+    while !fetch(quit_channel) 
+        
+        wait(localization_state_channel)
         meas = take!(localization_state_channel)
 
         ego = SA[meas.position[1] ; meas.position[2]]
