@@ -100,9 +100,6 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     @info "Press 'q' at any time to terminate vehicle."
 
 
-    i=0
-    j=0
-
     @async while !fetch(quit_channel) && isopen(socket)
         sleep(0.001)
 
