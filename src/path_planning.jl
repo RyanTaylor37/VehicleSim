@@ -100,7 +100,8 @@ end
 function path_planning(
     socket,
     quit_channel,
-    localization_state_channel
+    localization_state_channel,
+    routes
     )
     #=
     localization_state_channel, 
@@ -112,6 +113,9 @@ function path_planning(
     #latest_localization_state = fetch(localization_state_channel)
     #latest_perception_state = fetch(perception_state_channel)
     # figure out what to do ... setup motion planning problem etc
+    len1 = length(routes)
+    len2 = length(midpoint_paths)
+
     m = 2
     taup = 0.1
     taud = 0.05
@@ -152,7 +156,7 @@ function path_planning(
         end
         
         first_iter = false
-        cmd = VehicleCommand(steering_angle, target_velocity, controlled)
+        cmd = VehicleCommand(steering_angle, target_velocity, !fetch(quit_channel))
         serialize(socket, cmd)
     end 
         
