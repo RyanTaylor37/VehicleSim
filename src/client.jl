@@ -140,7 +140,7 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
             elseif meas isa GroundTruthMeasurement
                 !isfull(gt_channel) && put!(gt_channel, meas)
                 ln = length(gt_channel.data)
-                @info "gt_channel is populated $ln"
+                #@info "gt_channel is populated $ln"
             end
         end
     end)

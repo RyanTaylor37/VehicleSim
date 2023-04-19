@@ -22,16 +22,16 @@ function fake_localize(
     while !fetch(quit_channel)
         sleep(0.01)
 
-        @info "Fake Localization loop entrred"
+        #@info "Fake Localization loop entrred"
         fresh_gt_meas = []
         wait = 0
 
 
-        @info "waiting for gt channel to have data"
+        #@info "waiting for gt channel to have data"
         try 
             wait(gt_channel)  
         catch e
-            @info "wait err: $e"
+            #@info "wait err: $e"
         end
         
 
@@ -64,6 +64,6 @@ function fake_localize(
 
         put!(localization_state_channel,my_converted_gt_message)  
 
-        @info "localization_state_channel populated"
+        #@info "localization_state_channel populated"
     end
 end

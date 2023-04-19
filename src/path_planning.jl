@@ -179,7 +179,7 @@ function path_planning(
     taud = 4.75
     taui = 0.00
 
-    target_velocity = 6
+    target_velocity = 10
     steering_angle = 0.0
     error = 0
     init_error = 0
@@ -187,10 +187,9 @@ function path_planning(
     back_error = 0 
     dev_counter = 0
     first_iter = true
-
+    stop = -1
     while !fetch(quit_channel) 
-
-        @info "Path Planning loop entered"
+        #@info "Path Planning loop entered"
 
         try 
             wait(localization_state_channel)  
@@ -201,17 +200,30 @@ function path_planning(
             end 
         end
 
-    
         localization_msg = take!(localization_state_channel)
         #perception_msg = fetch(perception_state_channel)
 
+        
+        if (stop >= 0) 
+            #print("in if\n")
+            if (stop < 100)
+                stop += 1
+                cmd = VehicleCommand(steering_angle, 0, !fetch(quit_channel))
+                serialize(socket, cmd)
+                continue
+            else 
+                print("speed reset after stop\n")
+                stop = -1
+                target_velocity = 10
+            end
+        end
+        
 
         #ego_id = localization_msg.vehicle_id
         
         # New ego calculates the point 2/3 * length in front of center of car using quaternion measurements
         # Didn't change performance relative to using center of car before adopting circular turn error
         # Significantly improved turns after implementing curved turn error with dist 7
-        # adding length failed, 1/2 length best
         
         w = localization_msg.x.quaternion[1]
         x = localization_msg.x.quaternion[2]
@@ -237,7 +249,16 @@ function path_planning(
             newMidP = midpoint_paths[m].midP
             newMidQ = midpoint_paths[m].midQ
             averageR = 1/midpoint_paths[m].avg_curvature
-            print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR\n")
+            speed_limit = midpoint_paths[m].speed_limit
+            print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR at speed_limit $speed_limit\n")
+
+            target_velocity = speed_limit
+            if (stop_sign in midpoint_paths[m-1].lane_types)
+                stop = 0
+                print("stop added for midpath")
+                m += 1
+                continue
+            end
 
             m += 1
         end
@@ -290,13 +311,13 @@ function path_planning(
             steering_angle = -0.5
         end
         
-        @info "PID ctrl: taup:$error  taud:$dev tai:$sum_error devcounter: $dev_counter  back_error:$back_error"
+        #@info "PID ctrl: taup:$error  taud:$dev tai:$sum_error devcounter: $dev_counter  back_error:$back_error"
         
         first_iter = false
         cmd = VehicleCommand(steering_angle, target_velocity, !fetch(quit_channel))
         serialize(socket, cmd)
         
-        @info "Vehicle cmd sent $cmd"
+        #@info "Vehicle cmd sent $cmd"
     end 
         
 end
