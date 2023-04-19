@@ -175,13 +175,17 @@ function path_planning(
 
     j=0
     m = 2
-    taup = 0.1
-    taud = 0.05
+    taup = 0.2
+    taud = 4.75
+    taui = 0.00
 
-    target_velocity = 1
+    target_velocity = 6
     steering_angle = 0.0
     error = 0
     init_error = 0
+    sum_error = 0
+    back_error = 0 
+    dev_counter = 0
     first_iter = true
 
     while !fetch(quit_channel) 
@@ -220,8 +224,6 @@ function path_planning(
 
         ego = SA[localization_msg.x.position[1] ; localization_msg.x.position[2]] + 2*localization_msg.x.size[1]/3*SA[cos(yaw_z), sin(yaw_z)] 
 
-        
-        
         # old ego only considered center of car 
         #ego = SA[localization_msg.position[1] ; localization_msg.position[2]]
 
@@ -243,7 +245,7 @@ function path_planning(
 
         len = length(midpoint_paths)
         if (m > len)
-            cmd = VehicleCommand(0, 0, controlled)
+            cmd = VehicleCommand(0, 0, fetch(quit_channel))
             serialize(socket, cmd)
             take!(quit_channel)
             put!(quit_channel, true) 
@@ -255,17 +257,29 @@ function path_planning(
             init_error = error
         end
         error = CTE(ego, midpoint_paths[m-1])
-
+        sum_error += error
 
         if (first_iter)
             dev = 0
             init_error = error
+            back_error = init_error
         else
-            dev = error-init_error
+            if(init_error == error)
+                dev_counter += 1
+                if(dev_counter < 10) #7 represents the frequency of error being the same value
+                    dev = error - back_error
+                else
+                    dev = error-init_error
+                    back_error = init_error
+                    dev_counter =0
+                end
+            else 
+                dev = error-init_error #current - prev
+            end 
         end
 
         # TODO tinker with tau values to minimize overshoot 
-        steering_angle = -taup*error - taud*dev
+        steering_angle = -taup*error - taud*dev - taui*sum_error
 
         # ensures that steering angle isn't huge value 
         # 0.5 steering allows for enough steering ability while not over steering
@@ -276,7 +290,8 @@ function path_planning(
             steering_angle = -0.5
         end
         
-
+        @info "PID ctrl: taup:$error  taud:$dev tai:$sum_error devcounter: $dev_counter  back_error:$back_error"
+        
         first_iter = false
         cmd = VehicleCommand(steering_angle, target_velocity, !fetch(quit_channel))
         serialize(socket, cmd)
@@ -284,5 +299,4 @@ function path_planning(
         @info "Vehicle cmd sent $cmd"
     end 
         
-  
 end
