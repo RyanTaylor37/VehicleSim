@@ -1,16 +1,26 @@
 abstract type Measurement end
 
+struct SimpleVehicleState
+    p1::Float64
+    p2::Float64
+    θ::Float64
+    v::Float64
+    l::Float64
+    w::Float64
+    h::Float64
+end
+
 struct FullVehicleState
     position::SVector{3, Float64}
     quaternion::SVector{4, Float64}
     velocity::SVector{3, Float64}
     angular_velocity::SVector{3, Float64}
-    size::SVector{3, Float64} 
 end
 
 struct MyLocalizationType
     last_update::Float64
     x::FullVehicleState
+    size::SVector{3, Float64}
 end
 
 struct MyPerceptionType <: Measurement
