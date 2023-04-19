@@ -114,7 +114,6 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     errormonitor(@async while !fetch(quit_channel) && isopen(socket)
         sleep(0.001)
         
-
         local measurement_msg
         received = false
         while true
@@ -126,11 +125,6 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
                 break
             end
         end
-        
-        num_cam = 0
-        num_imu = 0
-        num_gps = 0
-        num_gt = 0
 
         !received && continue
         target_map_segment = measurement_msg.target_segment
@@ -145,6 +139,8 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
                 !isfull(cam_channel) && put!(cam_channel, meas)
             elseif meas isa GroundTruthMeasurement
                 !isfull(gt_channel) && put!(gt_channel, meas)
+                ln = length(gt_channel.data)
+                @info "gt_channel is populated $ln"
             end
         end
     end)
@@ -161,6 +157,8 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
             put!(quit_channel, true)         
             target_velocity = 0.0
             steering_angle = 0.0
+            cmd = VehicleCommand(steering_angle, target_velocity, !fetch(quit_channel))
+            serialize(socket, cmd)
             @info "Terminating Auto Client."
         end
     end 

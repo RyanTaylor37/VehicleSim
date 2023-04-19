@@ -26,9 +26,9 @@ include("control.jl")
 include("sink.jl")
 include("measurements.jl")
 include("map.jl")
-include("localization.jl")
-include("path_planning.jl")
 include("client.jl")
+include("path_planning.jl")
+include("localization.jl")
 
 
 export server, shutdown!, keyboard_client, auto_client

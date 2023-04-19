@@ -79,7 +79,7 @@ function server(max_vehicles=1,
         vehicles[vehicle_id] = vehicle
     end
     ### Added in to give spawing road segment #######################
-    println("Spawn Point: " , spawn_points)
+    #println("Spawn Point: " , spawn_points)
     @async visualize_vehicles(vehicles, state_channels, shutdown_channel)
 
     measure_vehicles(map, 
