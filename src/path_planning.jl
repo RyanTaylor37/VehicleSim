@@ -222,7 +222,7 @@ function path_planning(
         t4 = +1.0 - 2.0 * (y * y + z * z)
         yaw_z = atan(t3, t4)  
 
-        ego = SA[localization_msg.x.position[1] ; localization_msg.x.position[2]] + 2*localization_msg.x.size[1]/3*SA[cos(yaw_z), sin(yaw_z)] 
+        ego = SA[localization_msg.x.position[1] ; localization_msg.x.position[2]] + 2*localization_msg.size[1]/3*SA[cos(yaw_z), sin(yaw_z)] 
 
         # old ego only considered center of car 
         #ego = SA[localization_msg.position[1] ; localization_msg.position[2]]
@@ -266,7 +266,7 @@ function path_planning(
         else
             if(init_error == error)
                 dev_counter += 1
-                if(dev_counter < 10) #7 represents the frequency of error being the same value
+                if(dev_counter < 10) #10 represents the frequency of error being the same value
                     dev = error - back_error
                 else
                     dev = error-init_error

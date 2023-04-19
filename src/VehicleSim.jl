@@ -17,6 +17,7 @@ using Serialization
 using StaticArrays
 using DifferentialEquations
 using AStarSearch
+using Zygote
 
 #### Add in order of reference#####
 include("view_car.jl")

@@ -139,13 +139,14 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
                 !isfull(cam_channel) && put!(cam_channel, meas)
             elseif meas isa GroundTruthMeasurement
                 !isfull(gt_channel) && put!(gt_channel, meas)
-                ln = length(gt_channel.data)
-                @info "gt_channel is populated $ln"
+                #ln = length(gt_channel.data)
+                #@info "gt_channel is populated $ln"
             end
         end
     end)
 
-    @async fake_localize(gt_channel, localization_state_channel, ego_vehicle_id,quit_channel)
+   # @async fake_localize(gt_channel, localization_state_channel, ego_vehicle_id,quit_channel)
+    @async localize(gps_channel, imu_channel, localization_state_channel, quit_channel)
     @async path_planning(socket,quit_channel, localization_state_channel, routes, midpoint_paths)
 
     while !fetch(quit_channel) && isopen(socket)
