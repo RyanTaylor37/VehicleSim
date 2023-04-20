@@ -116,10 +116,11 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
     @info "Starting localization loop"
 
     # Set up algorithm / initialize variables
-    while true
+    while !fetch(quit_channel) 
         sleep(0.001) # prevent thread from hogging resources & freezing other threads
-        isready(quit_channel) && break
+    
         fresh_gps_meas = []
+        #@info "b4 data"
         while isready(gps_channel)
             meas = take!(gps_channel)
             push!(fresh_gps_meas, meas)
@@ -130,6 +131,7 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
             push!(fresh_imu_meas, meas)
         end
 
+        #@info "after data"
         # process measurements
         while length(fresh_gps_meas) > 0 && length(fresh_imu_meas) > 0
             sleep(0.001)
@@ -149,7 +151,7 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
                 fresh_imu_meas = fresh_imu_meas[2:end]
             end
 
-            @info "Processing measurement of type $(typeof(z))"
+            #@info "Processing measurement of type $(typeof(z))"
 
             # run filter
             if z isa GPSMeasurement
@@ -166,7 +168,7 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
                 take!(localization_state_channel)
             end
             put!(localization_state_channel, localization_state)
-            @info "localization populated"
+            #@info "localization populated"
         end
     end
 end
