@@ -214,16 +214,18 @@ function Jac_x_f(x, Δt)
     J[5:7, 5:7] = [sᵣ vᵣ[3] -vᵣ[2];
                    -vᵣ[3] sᵣ vᵣ[1];
                    vᵣ[2] -vᵣ[1] sᵣ]
- 
-    Jsv_srvr = [sₙ -vₙ'
-                vₙ [sₙ -vₙ[3] vₙ[2];
-                    vₙ[3] sₙ -vₙ[1];
-                    -vₙ[2] vₙ[1] sₙ]]
-    Jsrvr_mag = [-sin(mag*Δt / 2.0) * Δt / 2; sin(mag*Δt/2.0) * (-r / mag^2) + cos(mag*Δt/2)*Δt/2 * r/mag]
-    Jsrvr_r = [zeros(1,3); sin(mag*Δt / 2) / mag * I(3)]
-    Jmag_r = 1/mag * r'
 
-    J[4:7, 11:13] = Jsv_srvr * (Jsrvr_mag*Jmag_r + Jsrvr_r)
+    if mag > 1e-5
+        Jsv_srvr = [sₙ -vₙ'
+                    vₙ [sₙ -vₙ[3] vₙ[2];
+                        vₙ[3] sₙ -vₙ[1];
+                        -vₙ[2] vₙ[1] sₙ]]
+        Jsrvr_mag = [-sin(mag*Δt / 2.0) * Δt / 2; sin(mag*Δt/2.0) * (-r / mag^2) + cos(mag*Δt/2)*Δt/2 * r/mag]
+        Jsrvr_r = [zeros(1,3); sin(mag*Δt / 2) / mag * I(3)]
+        Jmag_r = 1/mag * r'
+
+        J[4:7, 11:13] = Jsv_srvr * (Jsrvr_mag*Jmag_r + Jsrvr_r)
+    end
     J[8:10, 8:10] = I(3)
     J[11:13, 11:13] = I(3)
     J
@@ -507,15 +509,22 @@ function update_targets(target_channels, state_channels, target_segments, map)
             if reached_target(pos, vel, map[current_target])
                 scores[i] += 1
                 new_target = rand(setdiff(target_segments, current_target))
-		@info "Vehicle $i reached target! New target is $new_target"
-		for i = 1:length(target_channels)
-		    @info "Scores: team $i has $(scores[i]) successful pickup/dropoffs"
-		end
+		        @info "Vehicle $i reached target! New target is $new_target"
+		        for i = 1:length(target_channels)
+		            @info "Scores: team $i has $(scores[i]) successful pickup/dropoffs"
+		        end
                 take!(target_channels[i])
-		put!(target_channels[i], new_target)
+		        put!(target_channels[i], new_target)
             end
         end
     end
+end
+
+function totalshutdown(c)
+    while isready(c)
+        take!(c)
+    end
+    close(c)
 end
 
 function measure_vehicles(map,
@@ -540,29 +549,30 @@ function measure_vehicles(map,
     imu_channels = [Channel{IMUMeasurement}(32) for _ in 1:num_vehicles]
     cam_channels = [Channel{CameraMeasurement}(32) for _ in 1:num_vehicles]
     gt_channels = [Channel{GroundTruthMeasurement}(32) for _ in 1:num_vehicles]
+    target_channels = [Channel{Int}(1) for _ in 1:num_vehicles]
     
     shutdown = false
     @async while true
         if isready(shutdown_channel)
             shutdown = fetch(shutdown_channel)
             if shutdown
-                foreach(c->close(c), [gps_channels; imu_channels; cam_channels; gt_channels])
-                foreach(c->close(c), values(meas_channels))
-                foreach(c->close(c), values(state_channels))
+                foreach(c->totalshutdown(c), [gps_channels; imu_channels; cam_channels; gt_channels])
+                foreach(c->totalshutdown(c), values(meas_channels))
+                foreach(c->totalshutdown(c), values(state_channels))
+                foreach(c->totalshutdown(c), target_channels)
                 break
             end
         end
         sleep(0.1)
     end
     
-    target_channels = [Channel{Int}(1) for _ in 1:num_vehicles]
     for id in 1:num_vehicles
 	target = rand(target_segments)
 	@info "Target for vehicle $id: $target"
         put!(target_channels[id], target)
     end
 
-    errormonitor(@async update_targets(target_channels, state_channels, target_segments, map))
+    @async update_targets(target_channels, state_channels, target_segments, map)
 
     # Centralized Measurements
     measure_gt && @async ground_truth(vehicles, state_channels, gt_channels)
