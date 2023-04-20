@@ -147,7 +147,7 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     end)
 
     #@async fake_localize(gt_channel, localization_state_channel, ego_vehicle_id,quit_channel)
-    @async localize(gps_channel, imu_channel, localization_state_channel, quit_channel, perception_state_channel)
+    @async localize(gps_channel, imu_channel, localization_state_channel, quit_channel)
     @async path_planning(socket,quit_channel, localization_state_channel, target_channel)
 
     while !fetch(quit_channel) && isopen(socket)

@@ -254,11 +254,13 @@ function path_planning(
     merge_to_loading_zone = 0
     local routes::Vector{Int}
     local midpoint_paths::Vector{MidPath}
+    @info "Path Planning thread entered"
     while !fetch(quit_channel) 
-        #@info "Path Planning loop entered"
-
+        
         try 
-            wait(localization_state_channel)  
+            @info "waiting for localization"
+            wait(localization_state_channel) 
+            @info "waiting done for localization" 
         catch e
             @info "path err $e"
             if length(localization_state_channel.data) == 0
@@ -322,54 +324,29 @@ function path_planning(
 
         # takes in ego position and next midpoint path and determines whether path followed should 
         # change to that next path if close enough
-        try
-            if (iterateMidPath(ego, midpoint_paths[m]) )
-                if( merge_to_loading_zone == 0 )
-                    print("changed mid path from \n")
-                    oldMidP = midpoint_paths[m-1].midP
-                    oldMidQ = midpoint_paths[m-1].midQ
-                    newMidP = midpoint_paths[m].midP
-                    newMidQ = midpoint_paths[m].midQ
-                    averageR = 1/midpoint_paths[m].avg_curvature
-                    speed_limit = midpoint_paths[m].speed_limit
-                    print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR at speed_limit $speed_limit\n")
-    
-                    target_velocity = speed_limit
-                    if (stop_sign in midpoint_paths[m-1].lane_types)
-                        stop = 0
-                        print("stop added for midpath")
-                        m += 1
-                        continue
-                    end
-    
-                    m += 1
-                else 
-                    print("changed mid path from \n")
-                    oldMidP = midpoint_paths[length(midpoint_paths)-1].midP
-                    oldMidQ = midpoint_paths[length(midpoint_paths)-1].midQ
-                    newMidP = midpoint_paths[length(midpoint_paths)].midP
-                    newMidQ = midpoint_paths[length(midpoint_paths)].midQ
-                    averageR = 1/midpoint_paths[length(midpoint_paths)].avg_curvature
-                    speed_limit = midpoint_paths[length(midpoint_paths)].speed_limit
-                    print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR at speed_limit $speed_limit\n")
-    
-                    target_velocity = speed_limit
-                    if (stop_sign in midpoint_paths[length(midpoint_paths)-1].lane_types)
-                        stop = 0
-                        print("stop added for midpath")
-                        m += 1
-                        continue
-                    end
-    
-                    m += 1
-                end 
-    
-            end
-        catch e
-            @info "pathing err $e"
-        end
 
-        
+        if (iterateMidPath(ego, midpoint_paths[m]) )
+            
+            print("changed mid path from \n")
+            oldMidP = midpoint_paths[m-1].midP
+            oldMidQ = midpoint_paths[m-1].midQ
+            newMidP = midpoint_paths[m].midP
+            newMidQ = midpoint_paths[m].midQ
+            averageR = 1/midpoint_paths[m].avg_curvature
+            speed_limit = midpoint_paths[m].speed_limit
+            print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR at speed_limit $speed_limit\n")
+
+            target_velocity = speed_limit
+            if (stop_sign in midpoint_paths[m-1].lane_types)
+                stop = 0
+                print("stop added for midpath")
+                m += 1
+                continue
+            end
+
+            m += 1
+
+        end
 
         len = length(midpoint_paths)
         if (m > len) 

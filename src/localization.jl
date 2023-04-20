@@ -69,7 +69,7 @@ function fake_localize(
 end
 
 
-function localize(gps_channel, imu_channel, localization_state_channel, quit_channel,perception_state_channel)
+function localize(gps_channel, imu_channel, localization_state_channel, quit_channel)
     @info "Starting localization"
 
     # initial state of vehicle
@@ -118,7 +118,7 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
     # Set up algorithm / initialize variables
     while true
         sleep(0.001) # prevent thread from hogging resources & freezing other threads
-        isready(shutdown_channel) && break
+        isready(quit_channel) && break
         fresh_gps_meas = []
         while isready(gps_channel)
             meas = take!(gps_channel)
@@ -149,7 +149,7 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
                 fresh_imu_meas = fresh_imu_meas[2:end]
             end
 
-            # @info "Processing measurement of type $(typeof(z))"
+            @info "Processing measurement of type $(typeof(z))"
 
             # run filter
             if z isa GPSMeasurement
@@ -166,6 +166,7 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
                 take!(localization_state_channel)
             end
             put!(localization_state_channel, localization_state)
+            @info "localization populated"
         end
     end
 end
