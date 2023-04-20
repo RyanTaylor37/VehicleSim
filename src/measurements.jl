@@ -1,5 +1,20 @@
 abstract type Measurement end
 
+struct FullOtherVehicleState
+    p1::Float64
+    p2::Float64
+    velocity::Float64
+    θ::Float64
+    length::Float64
+    width::Float64
+    height::Float64
+end
+
+struct MyPerceptionType
+    field1::Int
+    field2::Float64
+end
+
 struct SimpleVehicleState
     p1::Float64
     p2::Float64
@@ -22,11 +37,6 @@ struct MyLocalizationType
     x::FullVehicleState
     size::SVector{3, Float64}
 end
-
-struct MyPerceptionType <: Measurement
-    time::Float64
-end
-
 
 """
 Records lat/long measurements (expressed as first and second coordinates of map frame)
@@ -367,6 +377,7 @@ function imu(vehicle, state_channel, meas_channel; sqrt_meas_cov = Diagonal([0.0
         end
     end
 end
+
 
 function get_3d_bbox_corners(state, box_size)
     quat = state.q[1:4] # quatnerion

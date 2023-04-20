@@ -30,6 +30,7 @@ include("map.jl")
 include("client.jl")
 include("path_planning.jl")
 include("localization.jl")
+include("perception.jl")
 
 
 export server, shutdown!, keyboard_client, auto_client

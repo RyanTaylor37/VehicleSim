@@ -56,20 +56,20 @@ function fake_localize(
         # Convert latest_meas to MyLocalizationType
         my_converted_gt_message = convert_to_localization_type(latest_meas)
 
-       
 
         if isready(localization_state_channel)
             take!(localization_state_channel)
         end
 
-        put!(localization_state_channel,my_converted_gt_message)  
+        put!(localization_state_channel,my_converted_gt_message) 
 
-        #@info "localization_state_channel populated"
+        state_channel = fetch(localization_state_channel)
+        #@info "Fake localization channel: $state_channel "
     end
 end
 
 
-function localize(gps_channel, imu_channel, localization_state_channel, quit_channel)
+function localize(gps_channel, imu_channel, localization_state_channel, quit_channel,perception_state_channel)
     @info "Starting localization"
 
     # initial state of vehicle
@@ -149,10 +149,14 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
             # publish state
             full = FullVehicleState(x[1:3], x[4:7], x[8:10], x[11:13])
             localization_state = MyLocalizationType(last_update, full, [13.2, 5.7, 5.3])
-            if isready(localization_state_channel)
-                take!(localization_state_channel)
+            if isready(perception_state_channel)
+                take!(perception_state_channel)
             end
-            put!(localization_state_channel, localization_state)
+
+            put!(perception_state_channel, localization_state)
+
+            state_channel = fetch(perception_state_channel)
+            #@info "testing localization channel: $state_channel "
         end
     end
 end

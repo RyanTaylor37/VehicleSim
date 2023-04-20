@@ -89,7 +89,7 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     (peer_host, peer_port) = getpeername(socket)
 
     msg = deserialize(socket) # Visualization info
-    @info msg
+    @info "$msg"
 
     #map_segments = training_map()
     quit_channel = Channel{Bool}(1)
@@ -98,17 +98,16 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     imu_channel = Channel{IMUMeasurement}(32)
     cam_channel = Channel{CameraMeasurement}(32)
     gt_channel = Channel{GroundTruthMeasurement}(32)
+    target_channel = Channel{Int}(1)
 
     localization_state_channel = Channel{MyLocalizationType}(1)
-    #perception_state_channel = Channel{MyPerceptionType}(1)
+    perception_state_channel = Channel{MyLocalizationType}(1) #Channel{MyPerceptionType}(1)
+
 
     #target_map_segment = 0 # (not a valid segment, will be overwritten by message)
     ego_vehicle_id = 0 # (not a valid id, will be overwritten by message. This is used for discerning ground-truth messages)
     put!(quit_channel, false)
     @info "Press 'q' at any time to terminate vehicle."
-
-    routes::Vector{Int} = route(38,32)
-    midpoint_paths::Vector{MidPath} = midpoints(routes)
 
     @info "Measurement populator thread entering intialization"
     errormonitor(@async while !fetch(quit_channel) && isopen(socket)
@@ -128,7 +127,9 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
 
         !received && continue
         target_map_segment = measurement_msg.target_segment
+        !isfull(target_channel) && put!(target_channel, target_map_segment)
         ego_vehicle_id = measurement_msg.vehicle_id
+        
 
         for meas in measurement_msg.measurements
             if meas isa GPSMeasurement
@@ -145,9 +146,9 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
         end
     end)
 
-   # @async fake_localize(gt_channel, localization_state_channel, ego_vehicle_id,quit_channel)
-    @async localize(gps_channel, imu_channel, localization_state_channel, quit_channel)
-    @async path_planning(socket,quit_channel, localization_state_channel, routes, midpoint_paths)
+    @async fake_localize(gt_channel, localization_state_channel, ego_vehicle_id,quit_channel)
+    #@async localize(gps_channel, imu_channel, localization_state_channel, quit_channel, perception_state_channel)
+    @async path_planning(socket,quit_channel, localization_state_channel, target_channel)
 
     while !fetch(quit_channel) && isopen(socket)
         @info "Key Catcher Loop entered"

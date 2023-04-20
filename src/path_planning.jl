@@ -154,12 +154,41 @@ function findCenter(path::MidPath)
     return center
 end
 
+function cur_segment(position)
+    all_segments = training_map()
+
+    for (id, road_segment) in all_segments
+        left_lane_boundary = road_segment.lane_boundaries[1]
+        right_lane_boundary = road_segment.lane_boundaries[2]
+
+        left_slope = (left_lane_boundary.pt_b[2] - left_lane_boundary.pt_a[2]) / (left_lane_boundary.pt_b[1] - left_lane_boundary.pt_a[1])
+        right_slope = (right_lane_boundary.pt_b[2] - right_lane_boundary.pt_a[2]) / (right_lane_boundary.pt_b[1] - right_lane_boundary.pt_a[1])
+
+        left_y_intercept = left_lane_boundary.pt_a[2] - left_slope * left_lane_boundary.pt_a[1]
+        right_y_intercept = right_lane_boundary.pt_a[2] - right_slope * right_lane_boundary.pt_a[1]
+
+        left_boundary_y = left_slope * position[1] + left_y_intercept
+        right_boundary_y = right_slope * position[1] + right_y_intercept
+
+        # Check if the x-coordinate of the position is within the range of x-coordinates of the left and right lane boundaries
+        x_min = min(left_lane_boundary.pt_a[1], left_lane_boundary.pt_b[1], right_lane_boundary.pt_a[1], right_lane_boundary.pt_b[1])
+        x_max = max(left_lane_boundary.pt_a[1], left_lane_boundary.pt_b[1], right_lane_boundary.pt_a[1], right_lane_boundary.pt_b[1])
+
+        # Check if the position is within the left and right lane boundaries
+        if position[1] >= x_min && position[1] <= x_max && position[2] >= left_boundary_y && position[2] <= right_boundary_y
+            @info "road segment: $road_segment"
+            return id
+        end
+    end
+
+    error("No segment found")
+end
+
 function path_planning(
     socket,
     quit_channel,
     localization_state_channel::Channel{MyLocalizationType},
-    routes,
-    midpoint_paths
+    target_channel
     )
     #=
     localization_state_channel, 
@@ -188,8 +217,9 @@ function path_planning(
     dev_counter = 0
     first_iter = true
     stop = -1
+    find_route = false
     while !fetch(quit_channel) 
-        #@info "Path Planning loop entered"
+        @info "Path Planning loop entered"
 
         try 
             wait(localization_state_channel)  
@@ -203,10 +233,20 @@ function path_planning(
         localization_msg = take!(localization_state_channel)
         #perception_msg = fetch(perception_state_channel)
 
+        if(!find_route)
+            #start = cur_segment(localization_msg.x.position)
+            start = 38
+            stop = fetch(target_channel)
+            routes::Vector{Int} = route(stop,start)
+            @info "route calculated $routes"
+            midpoint_paths::Vector{MidPath} = midpoints(routes)
+            find_route = true 
+        end 
+
         
         if (stop >= 0) 
             #print("in if\n")
-            if (stop < 100)
+            if (stop < 50)
                 stop += 1
                 cmd = VehicleCommand(steering_angle, 0, !fetch(quit_channel))
                 serialize(socket, cmd)
@@ -262,7 +302,6 @@ function path_planning(
 
             m += 1
         end
-        
 
         len = length(midpoint_paths)
         if (m > len)
@@ -317,7 +356,7 @@ function path_planning(
         cmd = VehicleCommand(steering_angle, target_velocity, !fetch(quit_channel))
         serialize(socket, cmd)
         
-        #@info "Vehicle cmd sent $cmd"
+        @info "Vehicle cmd sent $cmd"
     end 
         
 end
