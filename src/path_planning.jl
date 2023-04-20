@@ -78,7 +78,7 @@ function midpoints(paths::Vector{Int})
 
         pop1 = pop!(midpointPaths)
         pop2 = pop!(midpointPaths)
-        pop3 = pop!(midpointPaths)
+        #pop3 = pop!(midpointPaths)
         @info "popped midpath pop1:$pop1   pop2:$pop2 pop3:$pop3"
         push!(midpointPaths, MidPath(midP, midQ, map[paths[n]].speed_limit, map[paths[n]].lane_types, avg_curvature))
         @info "midP :$midP  midQ:$midQ  midpointPaths: $midpointPaths"  
@@ -234,185 +234,227 @@ function path_planning(
     #latest_perception_state = fetch(perception_state_channel)
     # figure out what to do ... setup motion planning problem etc
 
+    reset = true
+    while reset
+        j=0
+        m = 2
+        taup = 0.2
+        taud = 4.75
+        taui = 0.000
 
-    j=0
-    m = 2
-    taup = 0.2
-    taud = 4.75
-    taui = 0.0000
-
-    target_velocity = 10
-    steering_angle = 0.0
-    error = 0
-    init_error = 0
-    sum_error = 0
-    back_error = 0 
-    dev_counter = 0
-    first_iter = true
-    stop = -1
-    find_route = false
-    merge_to_loading_zone = 0
-    local routes::Vector{Int}
-    local midpoint_paths::Vector{MidPath}
-    @info "Path Planning thread entered"
-    while !fetch(quit_channel) 
-        
-        try 
-            @info "waiting for localization"
-            wait(localization_state_channel) 
-            @info "waiting done for localization" 
-        catch e
-            @info "path err $e"
-            if length(localization_state_channel.data) == 0
-                continue
-            end 
-        end
-
-
-        localization_msg = take!(localization_state_channel)
-        #perception_msg = fetch(perception_state_channel)
-
-        if(!find_route)
-            @info "testing cur_segment"
-
-            start = get_cur_segment(localization_msg.x.position)
-            @info "get_cur_segmnt start: $start"
-
-            #start = 32
-            stop = 80 #fetch(target_channel)
-            routes = route(stop,start)
-            @info "route calculated $routes"
-            midpoint_paths = midpoints(routes)
-            find_route = true 
-        end 
-
-        
-        if (stop >= 0) 
-            #print("in if\n")
-            if (stop < 50)
-                stop += 1
-                cmd = VehicleCommand(steering_angle, 0, !fetch(quit_channel))
-                serialize(socket, cmd)
-                continue
-            else 
-                print("speed reset after stop\n")
-                stop = -1
-                target_velocity = 10
-            end
-        end
-        
-
-        #ego_id = localization_msg.vehicle_id
-        
-        # New ego calculates the point 2/3 * length in front of center of car using quaternion measurements
-        # Didn't change performance relative to using center of car before adopting circular turn error
-        # Significantly improved turns after implementing curved turn error with dist 7
-        
-        w = localization_msg.x.quaternion[1]
-        x = localization_msg.x.quaternion[2]
-        y = localization_msg.x.quaternion[3]
-        z = localization_msg.x.quaternion[4]
-
-        t3 = +2.0 * (w * z + x * y)
-        t4 = +1.0 - 2.0 * (y * y + z * z)
-        yaw_z = atan(t3, t4)  
-
-        ego = SA[localization_msg.x.position[1] ; localization_msg.x.position[2]] + 2*localization_msg.size[1]/3*SA[cos(yaw_z), sin(yaw_z)] 
-
-        # old ego only considered center of car 
-        #ego = SA[localization_msg.position[1] ; localization_msg.position[2]]
-
-        # takes in ego position and next midpoint path and determines whether path followed should 
-        # change to that next path if close enough
-
-        if (iterateMidPath(ego, midpoint_paths[m]) )
+        target_velocity = 10
+        steering_angle = 0.0
+        error = 0
+        init_error = 0
+        sum_error = 0
+        back_error = 0 
+        dev_counter = 0
+        first_iter = true
+        stop = -1
+        find_route = false
+        merge_to_loading_zone = 0
+        local routes::Vector{Int}
+        local midpoint_paths::Vector{MidPath}
+        @info "Path Planning thread entered"
+        reset = false
+        while !fetch(quit_channel) && !reset 
             
-            print("changed mid path from \n")
-            oldMidP = midpoint_paths[m-1].midP
-            oldMidQ = midpoint_paths[m-1].midQ
-            newMidP = midpoint_paths[m].midP
-            newMidQ = midpoint_paths[m].midQ
-            averageR = 1/midpoint_paths[m].avg_curvature
-            speed_limit = midpoint_paths[m].speed_limit
-            print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR at speed_limit $speed_limit\n")
-
-            target_velocity = speed_limit
-            if (stop_sign in midpoint_paths[m-1].lane_types)
-                stop = 0
-                print("stop added for midpath")
-                m += 1
-                continue
+            try 
+                #@info "waiting for localization"
+                wait(localization_state_channel) 
+                #@info "waiting done for localization" 
+            catch e
+                @info "path err $e"
+                if length(localization_state_channel.data) == 0
+                    continue
+                end 
             end
 
-            m += 1
 
-        end
+            localization_msg = take!(localization_state_channel)
+            #perception_msg = fetch(perception_state_channel)
 
-        len = length(midpoint_paths)
-        if (m > len) 
-            if(merge_to_loading_zone > 17)     
-                cmd = VehicleCommand(0, 0, fetch(quit_channel))
-                serialize(socket, cmd)
-                take!(quit_channel)
-                put!(quit_channel, true) 
-                @info "Terminating Auto Client."
-                continue
-            else 
-                @info "entering loading zone"
-                merge_to_loading_zone += 1
-            end
-        end 
-        if (!first_iter)
-            init_error = error
-        end
+            if(!find_route)
+                @info "testing cur_segment"
 
-        if(merge_to_loading_zone == 0)
-            error = CTE(ego, midpoint_paths[m-1])  
-        else
-            @info "End Goal spec cond"
-            error = CTE(ego, midpoint_paths[length(midpoint_paths)]) 
-        end
+                start = get_cur_segment(localization_msg.x.position)
+                try
         
-        sum_error += error
-
-        if (first_iter)
-            dev = 0
-            init_error = error
-            back_error = init_error
-        else
-            if(init_error == error)
-                dev_counter += 1
-                if(dev_counter < 10) #10 represents the frequency of error being the same value
-                    dev = error - back_error
-                else
-                    dev = error-init_error
-                    back_error = init_error
-                    dev_counter =0
+                    @info "get_cur_segmnt start: $start" 
+                catch e
+                    @info "catch $e"
                 end
-            else 
-                dev = error-init_error #current - prev
+
+
+                #start = 32
+                stop = take!(target_channel)
+                routes = route(stop,start)
+                @info "route calculated $routes"
+                midpoint_paths = midpoints(routes)
+                find_route = true 
             end 
-        end
 
-        # TODO tinker with tau values to minimize overshoot 
-        steering_angle = -taup*error - taud*dev - taui*sum_error
+            
+            if (stop >= 0) 
+                #print("in if\n")
+                if (stop < 50)
+                    stop += 1
+                    cmd = VehicleCommand(steering_angle, 0, !fetch(quit_channel))
+                    serialize(socket, cmd)
+                    continue
+                else 
+                    print("speed reset after stop\n")
+                    stop = -1
+                    target_velocity = 10
+                end
+            end
+            
 
-        # ensures that steering angle isn't huge value 
-        # 0.5 steering allows for enough steering ability while not over steering
-        # 0.3 not enough steering ability
-        if (steering_angle > 0.5)
-            steering_angle = 0.5
-        elseif (steering_angle < -0.5)
-            steering_angle = -0.5
-        end
-        
-        #@info "PID ctrl: taup:$error  taud:$dev tai:$sum_error devcounter: $dev_counter  back_error:$back_error"
-        
-        first_iter = false
-        cmd = VehicleCommand(steering_angle, target_velocity, !fetch(quit_channel))
-        serialize(socket, cmd)
-        
-        #@info "Vehicle cmd sent $cmd"
-    end 
-        
+            #ego_id = localization_msg.vehicle_id
+            
+            # New ego calculates the point 2/3 * length in front of center of car using quaternion measurements
+            # Didn't change performance relative to using center of car before adopting circular turn error
+            # Significantly improved turns after implementing curved turn error with dist 7
+            
+            w = localization_msg.x.quaternion[1]
+            x = localization_msg.x.quaternion[2]
+            y = localization_msg.x.quaternion[3]
+            z = localization_msg.x.quaternion[4]
+
+            t3 = +2.0 * (w * z + x * y)
+            t4 = +1.0 - 2.0 * (y * y + z * z)
+            yaw_z = atan(t3, t4)  
+
+            ego = SA[localization_msg.x.position[1] ; localization_msg.x.position[2]] + 2*localization_msg.size[1]/3*SA[cos(yaw_z), sin(yaw_z)] 
+
+            if(merge_to_loading_zone > 0)
+            # @info "edge case loop1"
+            end 
+            # old ego only considered center of car 
+            #ego = SA[localization_msg.position[1] ; localization_msg.position[2]]
+
+            # takes in ego position and next midpoint path and determines whether path followed should 
+            # change to that next path if close enough
+
+            if (merge_to_loading_zone==0 && iterateMidPath(ego, midpoint_paths[m]) ) 
+                
+                #@info "normal transitoon"
+                print("changed mid path from \n")
+                oldMidP = midpoint_paths[m-1].midP
+                oldMidQ = midpoint_paths[m-1].midQ
+                newMidP = midpoint_paths[m].midP
+                newMidQ = midpoint_paths[m].midQ
+                averageR = 1/midpoint_paths[m].avg_curvature
+                speed_limit = midpoint_paths[m].speed_limit
+                print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR at speed_limit $speed_limit\n")
+
+                target_velocity = speed_limit
+                if (stop_sign in midpoint_paths[m-1].lane_types)
+                    stop = 0
+                    print("stop added for midpath")
+                    m += 1
+                    continue
+                end
+
+                m += 1
+            elseif (merge_to_loading_zone > 0 && iterateMidPath(ego, midpoint_paths[length(midpoint_paths)]) ) 
+                #@info "merge load code"
+                print("changed mid path from \n")
+                oldMidP = midpoint_paths[length(midpoint_paths)-1].midP
+                oldMidQ = midpoint_paths[length(midpoint_paths)-1].midQ
+                newMidP = midpoint_paths[length(midpoint_paths)].midP
+                newMidQ = midpoint_paths[length(midpoint_paths)].midQ
+                averageR = 1/midpoint_paths[length(midpoint_paths)].avg_curvature
+                speed_limit = midpoint_paths[length(midpoint_paths)].speed_limit
+                print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR at speed_limit $speed_limit\n")
+
+                target_velocity = speed_limit
+                if (stop_sign in midpoint_paths[length(midpoint_paths)-1].lane_types)
+                    stop = 0
+                    print("stop added for midpath")
+                    m += 1
+                    continue
+                end
+
+                m += 1
+                
+            end
+
+            len = length(midpoint_paths)
+            if (m > len) 
+                if(merge_to_loading_zone > 18) 
+                       
+                    cmd = VehicleCommand(0, 0, fetch(quit_channel))
+                    serialize(socket, cmd)
+                    @info "Reached Target Road Segment... Restarting"
+                    #= 
+                    take!(quit_channel)
+                    put!(quit_channel, true) 
+                    @info "Terminating Auto Client."
+                    continue
+                    =#
+                    reset = true 
+                    continue
+                else 
+                    @info "entering loading zone"
+                    merge_to_loading_zone += 1
+                end
+            end 
+
+            #@info "m: $m  len:$len"
+
+            if (!first_iter)
+                init_error = error
+            end
+
+            if(merge_to_loading_zone == 0)
+                error = CTE(ego, midpoint_paths[m-1])  
+            else
+                @info "End Goal spec cond"
+                error = CTE(ego, midpoint_paths[length(midpoint_paths)]) 
+            end
+            
+            sum_error += error
+
+            if (first_iter)
+                dev = 0
+                init_error = error
+                back_error = init_error
+            else
+                if(error - init_error <= 0 && error - init_error >= 0) #16.225
+                    dev_counter += 1
+                    if(dev_counter < 10) #10 represents the frequency of error being the same value
+                        dev = error - back_error
+                    else
+                        dev = error-init_error
+                        back_error = init_error
+                        dev_counter =0
+                    end
+                else 
+                    dev = error-init_error #current - prev
+                    #back_error = init_error
+                end 
+            end
+
+            # TODO tinker with tau values to minimize overshoot 
+            steering_angle = -taup*error - taud*dev - taui*sum_error
+
+            # ensures that steering angle isn't huge value 
+            # 0.5 steering allows for enough steering ability while not over steering
+            # 0.3 not enough steering ability
+            if (steering_angle > 0.5)
+                steering_angle = 0.5
+            elseif (steering_angle < -0.5)
+                steering_angle = -0.5
+            end
+            
+            #@info "PID ctrl: taup:$error  prev: $init_error taud:$dev tai:$sum_error devcounter: $dev_counter  back_error:$back_error  sterring = $steering_angle"
+            
+            first_iter = false
+            cmd = VehicleCommand(steering_angle, target_velocity, !fetch(quit_channel))
+            serialize(socket, cmd)
+            
+            #@info "Vehicle cmd sent $cmd"
+        end 
+    end  
 end

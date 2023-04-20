@@ -77,9 +77,6 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
     first_gps = take!(gps_channel)
     @info "First GPS: $first_gps"
 
-    # cur_seg = get_cur_segment([first_gps.lat, first_gps.long])
-    # @info "Current segment: $cur_seg"
-
     θ = first_gps.heading
 
     # rotation matrix from segment to world frame
@@ -111,16 +108,15 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
 
     # measurement noise for both GPS and IMU
     R_gps = Diagonal([3.0, 3.0, 1.0])
-    R_imu = 0.1 * I(6) # 0.01?
+    R_imu = 0.01 * I(6) # 0.01?
 
     @info "Starting localization loop"
 
     # Set up algorithm / initialize variables
-    while !fetch(quit_channel) 
-        sleep(0.001) # prevent thread from hogging resources & freezing other threads
-    
+    while true
+        sleep(0.001)
+        isready(shutdown_channel) && break
         fresh_gps_meas = []
-        #@info "b4 data"
         while isready(gps_channel)
             meas = take!(gps_channel)
             push!(fresh_gps_meas, meas)
@@ -131,7 +127,6 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
             push!(fresh_imu_meas, meas)
         end
 
-        #@info "after data"
         # process measurements
         while length(fresh_gps_meas) > 0 && length(fresh_imu_meas) > 0
             sleep(0.001)
@@ -151,7 +146,7 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
                 fresh_imu_meas = fresh_imu_meas[2:end]
             end
 
-            #@info "Processing measurement of type $(typeof(z))"
+            # @info "Processing measurement of type $(typeof(z))"
 
             # run filter
             if z isa GPSMeasurement
@@ -168,7 +163,6 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
                 take!(localization_state_channel)
             end
             put!(localization_state_channel, localization_state)
-            #@info "localization populated"
         end
     end
 end
