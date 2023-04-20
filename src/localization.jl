@@ -73,24 +73,34 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
     @info "Starting localization"
 
     # initial state of vehicle
+    x0 = zeros(13)
     first_gps = take!(gps_channel)
     @info "First GPS: $first_gps"
 
-    # TODO: publish the seg in some file to a channel that I can access here
+    # cur_seg = get_cur_segment([first_gps.lat, first_gps.long])
+    # @info "Current segment: $cur_seg"
 
-    x0 = zeros(13)
-    x0[1:3] .= [first_gps.lat, first_gps.long, 1.0]    # position (xyz)
-    x0[4:7] .= [1.0, 0.0, 0.0, 0.0]                    # quaternion
-    x0[8:10] .= [0.0, 0.0, 0.0]                        # velocity
-    x0[11:13] .= [0.0, 0.0, 0.0]                       # angular_velocity
+    θ = first_gps.heading
 
+    # rotation matrix from segment to world frame
+    R = RotZ(θ)
+
+    # get quaternion from rotation matrix
+    qw = sqrt(1 + R[1,1] + R[2,2] + R[3,3]) / 2
+    qx = (R[3,2] - R[2,3]) / (4 * qw)
+    qy = (R[1,3] - R[3,1]) / (4 * qw)
+    qz = (R[2,1] - R[1,2]) / (4 * qw)
+    x0[4:7] = [qw, qx, qy, qz]
+
+    x0[1:2] = [first_gps.lat, first_gps.long]
+    x0[3] = 1.0 
     x = x0
     last_update = 0.0
 
     P = zeros(13, 13)
     diag_vals = [
-        100.0, 100.0, 0.0, 
-        0.5, 0.5, 0.5, 0.5, 
+        1.0, 1.0, 1.0, 
+        0.1, 0.1, 0.1, 0.1, 
         0.1, 0.1, 0.1, 
         0.1, 0.1, 0.1
     ]
@@ -100,15 +110,15 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
     Q = 0.1 * I(13)
 
     # measurement noise for both GPS and IMU
-    R_gps = 1 * I(2)
-    R_imu = 0.01 * I(6)
+    R_gps = Diagonal([3.0, 3.0, 1.0])
+    R_imu = 0.1 * I(6) # 0.01?
 
     @info "Starting localization loop"
 
     # Set up algorithm / initialize variables
-    while !fetch(quit_channel)
+    while true
         sleep(0.001) # prevent thread from hogging resources & freezing other threads
-        #isready(quit_channel) && break
+        isready(shutdown_channel) && break
         fresh_gps_meas = []
         while isready(gps_channel)
             meas = take!(gps_channel)
@@ -123,17 +133,20 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
         # process measurements
         while length(fresh_gps_meas) > 0 && length(fresh_imu_meas) > 0
             sleep(0.001)
-            # check what measurement is fresher
-            if fresh_gps_meas[1].time < fresh_imu_meas[1].time
-                z = fresh_gps_meas[1]
-                Δ = z.time - last_update
-                last_update = z.time
-                popfirst!(fresh_gps_meas)
-            else
-                z = fresh_imu_meas[1]
-                Δ = z.time - last_update
-                last_update = z.time
-                popfirst!(fresh_imu_meas)
+            # grab measurements and sort them by time
+            all_meas = [fresh_gps_meas..., fresh_imu_meas...]
+            sort!(all_meas, by = m -> m.time)
+
+            # Process the earliest measurement
+            z = all_meas[1]
+            Δ = z.time - last_update
+            last_update = z.time
+
+            # Remove the processed measurement from the respective list
+            if z isa GPSMeasurement
+                fresh_gps_meas = fresh_gps_meas[2:end]
+            elseif z isa IMUMeasurement
+                fresh_imu_meas = fresh_imu_meas[2:end]
             end
 
             # @info "Processing measurement of type $(typeof(z))"
@@ -149,14 +162,10 @@ function localize(gps_channel, imu_channel, localization_state_channel, quit_cha
             # publish state
             full = FullVehicleState(x[1:3], x[4:7], x[8:10], x[11:13])
             localization_state = MyLocalizationType(last_update, full, [13.2, 5.7, 5.3])
-            if isready(perception_state_channel)
-                take!(perception_state_channel)
+            if isready(localization_state_channel)
+                take!(localization_state_channel)
             end
-
-            put!(perception_state_channel, localization_state)
-
-            state_channel = fetch(perception_state_channel)
-            #@info "testing localization channel: $state_channel "
+            put!(localization_state_channel, localization_state)
         end
     end
 end
@@ -178,7 +187,7 @@ end
 
 # -------------------------------- EKF functions -------------------------------- #
 # process model
-function f(x, Δt)
+function f1(x, Δt)
     position = x[1:3]
     quaternion = x[4:7]
     velocity = x[8:10]
@@ -192,7 +201,7 @@ function f(x, Δt)
         vᵣ = zeros(3)
     else
         sᵣ = cos(mag*Δt / 2.0)
-        vᵣ = sin(mag*Δt / 2.0) * r/mag
+        vᵣ = sin(mag*Δt / 2.0) * (r / mag)
     end
 
     sₙ = quaternion[1]
@@ -201,7 +210,9 @@ function f(x, Δt)
     s = sₙ*sᵣ - vₙ'*vᵣ
     v = sₙ*vᵣ+sᵣ*vₙ+vₙ×vᵣ
 
-    new_position = position + Δt * velocity
+    R = Rot_from_quat(quaternion)  
+
+    new_position = position + Δt * R * velocity
     new_quaternion = [s; v]
     new_velocity = velocity
     new_angular_vel = angular_vel
@@ -216,18 +227,17 @@ end
 # measurement model
 function h(x, z)
     if z isa GPSMeasurement
-        # convert to body frame
         T = get_gps_transform()
         gps_loc_body = T*[zeros(3); 1.0]
+        xyz_body = x[1:3] # position
+        q_body = x[4:7] # quaternion
 
-        xyz_body = x[1:3]
-        q_body = x[4:7]
         Tbody = get_body_transform(q_body, xyz_body)
         xyz_gps = Tbody * [gps_loc_body; 1]
+        yaw = extract_yaw_from_quaternion(q_body)
+        meas = [xyz_gps[1:2]; yaw]
 
-        # need to return a gps frame, which is the location of the body frame
-        return xyz_gps[1:2]
-
+        return meas
     elseif z isa IMUMeasurement
         # convert to body frame
         T_body_imu = get_imu_transform1()
@@ -254,9 +264,9 @@ function jac_hx(x, z)
 end
 
 # convert z to a vector
-function convertz(z)
+function z_to_vec(z)
     if z isa GPSMeasurement
-        return [z.lat; z.long]
+        return [z.lat; z.long; z.heading]
     elseif z isa IMUMeasurement
         return [z.linear_vel; z.angular_vel]
     else
@@ -267,21 +277,21 @@ end
 
 function filter(x, z, P, Q, R, Δ)
     # predict
-    x̂ = f(x, Δ)
+    x̂ = f1(x, Δ)
     F = jac_fx(x, Δ)
     P̂ = F * P * F' + Q
 
     # update
-    convert = convertz(z)
+    z_vec = z_to_vec(z)
 
-    y = convert - h(x̂, z)
+    y = z_vec - h(x̂, z)
     H = jac_hx(x̂, z)
     S = H * P̂ * H' + R
     K = P̂ * H' * inv(S)
 
-    x = x̂ + K * y
+    x̂ = x̂ + K * y
     P = (I - K * H) * P̂
-    @info "x: $x"
+    #@info "x: $x"
 
-    return x, P
+    return x̂, P
 end

@@ -59,6 +59,7 @@ function midpoints(paths::Vector{Int})
         lane = map[paths[i]]
         midP = (lane.lane_boundaries[1].pt_a + lane.lane_boundaries[2].pt_a)/2
         midQ = (lane.lane_boundaries[1].pt_b + lane.lane_boundaries[2].pt_b)/2
+             
         avg_curvature = 0
         if (lane.lane_boundaries[1].curvature != 0)
             r1 = 1/lane.lane_boundaries[1].curvature
@@ -67,6 +68,24 @@ function midpoints(paths::Vector{Int})
         end
         push!(midpointPaths, MidPath(midP, midQ, lane.speed_limit, lane.lane_types, avg_curvature)) 
     end
+
+
+    @info "end goal lane bound calc"
+    avg_curvature = 0
+    try
+        midP = (map[paths[n]].lane_boundaries[2].pt_a + map[paths[n]].lane_boundaries[3].pt_a)/2
+        midQ = (map[paths[n]].lane_boundaries[2].pt_b + map[paths[n]].lane_boundaries[3].pt_b)/2
+
+        pop1 = pop!(midpointPaths)
+        pop2 = pop!(midpointPaths)
+        pop3 = pop!(midpointPaths)
+        @info "popped midpath pop1:$pop1   pop2:$pop2 pop3:$pop3"
+        push!(midpointPaths, MidPath(midP, midQ, map[paths[n]].speed_limit, map[paths[n]].lane_types, avg_curvature))
+        @info "midP :$midP  midQ:$midQ  midpointPaths: $midpointPaths"  
+    catch e
+        @info "end goal err $e"
+    end
+
 
     return midpointPaths
 end
@@ -154,34 +173,48 @@ function findCenter(path::MidPath)
     return center
 end
 
-function cur_segment(position)
+function get_cur_segment(position)
     all_segments = training_map()
 
     for (id, road_segment) in all_segments
         left_lane_boundary = road_segment.lane_boundaries[1]
         right_lane_boundary = road_segment.lane_boundaries[2]
 
-        left_slope = (left_lane_boundary.pt_b[2] - left_lane_boundary.pt_a[2]) / (left_lane_boundary.pt_b[1] - left_lane_boundary.pt_a[1])
-        right_slope = (right_lane_boundary.pt_b[2] - right_lane_boundary.pt_a[2]) / (right_lane_boundary.pt_b[1] - right_lane_boundary.pt_a[1])
+        lx1, ly1 = left_lane_boundary.pt_a[1], left_lane_boundary.pt_a[2]
+        lx2, ly2 = left_lane_boundary.pt_b[1], left_lane_boundary.pt_b[2]
 
-        left_y_intercept = left_lane_boundary.pt_a[2] - left_slope * left_lane_boundary.pt_a[1]
-        right_y_intercept = right_lane_boundary.pt_a[2] - right_slope * right_lane_boundary.pt_a[1]
+        rx1, ry1 = right_lane_boundary.pt_a[1], right_lane_boundary.pt_a[2]
+        rx2, ry2 = right_lane_boundary.pt_b[1], right_lane_boundary.pt_b[2]
 
-        left_boundary_y = left_slope * position[1] + left_y_intercept
-        right_boundary_y = right_slope * position[1] + right_y_intercept
+        # ymin, ymax, xmin, xmax
+        # minmax only takes 2 arguments
+        
 
-        # Check if the x-coordinate of the position is within the range of x-coordinates of the left and right lane boundaries
-        x_min = min(left_lane_boundary.pt_a[1], left_lane_boundary.pt_b[1], right_lane_boundary.pt_a[1], right_lane_boundary.pt_b[1])
-        x_max = max(left_lane_boundary.pt_a[1], left_lane_boundary.pt_b[1], right_lane_boundary.pt_a[1], right_lane_boundary.pt_b[1])
+        xmin = min([lx1, lx2, rx1, rx2]...)
+        xmax = max([lx1, lx2, rx1, rx2]...)
+        ymin = min([ly1, ly2, ry1, ry2]...)
+        ymax = max([ly1, ly2, ry1, ry2]...)
 
-        # Check if the position is within the left and right lane boundaries
-        if position[1] >= x_min && position[1] <= x_max && position[2] >= left_boundary_y && position[2] <= right_boundary_y
-            @info "road segment: $road_segment"
+        x = position[1]
+        y = position[2]
+
+        if (x <= xmax && x >= xmin && y <= ymax && y >= ymin)
+            @info "id: $id"
             return id
         end
     end
 
     error("No segment found")
+end
+
+function get_direction(id)
+    all_segments = training_map()
+    cur_segment = all_segments[id]
+
+    lane_boundary = cur_segment.lane_boundaries[1]
+    delta = lane_boundary.pt_b - lane_boundary.pt_a
+    dir = delta / norm(delta)
+    atan(dir[2], dir[1])
 end
 
 function path_planning(
@@ -206,7 +239,7 @@ function path_planning(
     m = 2
     taup = 0.2
     taud = 4.75
-    taui = 0.00
+    taui = 0.0000
 
     target_velocity = 10
     steering_angle = 0.0
@@ -218,8 +251,11 @@ function path_planning(
     first_iter = true
     stop = -1
     find_route = false
+    merge_to_loading_zone = 0
+    local routes::Vector{Int}
+    local midpoint_paths::Vector{MidPath}
     while !fetch(quit_channel) 
-        @info "Path Planning loop entered"
+        #@info "Path Planning loop entered"
 
         try 
             wait(localization_state_channel)  
@@ -230,16 +266,21 @@ function path_planning(
             end 
         end
 
+
         localization_msg = take!(localization_state_channel)
         #perception_msg = fetch(perception_state_channel)
 
         if(!find_route)
-            #start = cur_segment(localization_msg.x.position)
-            start = 38
-            stop = fetch(target_channel)
-            routes::Vector{Int} = route(stop,start)
+            @info "testing cur_segment"
+
+            start = get_cur_segment(localization_msg.x.position)
+            @info "get_cur_segmnt start: $start"
+
+            #start = 32
+            stop = 80 #fetch(target_channel)
+            routes = route(stop,start)
             @info "route calculated $routes"
-            midpoint_paths::Vector{MidPath} = midpoints(routes)
+            midpoint_paths = midpoints(routes)
             find_route = true 
         end 
 
@@ -281,42 +322,80 @@ function path_planning(
 
         # takes in ego position and next midpoint path and determines whether path followed should 
         # change to that next path if close enough
-
-        if (iterateMidPath(ego, midpoint_paths[m]))
-            print("changed mid path from \n")
-            oldMidP = midpoint_paths[m-1].midP
-            oldMidQ = midpoint_paths[m-1].midQ
-            newMidP = midpoint_paths[m].midP
-            newMidQ = midpoint_paths[m].midQ
-            averageR = 1/midpoint_paths[m].avg_curvature
-            speed_limit = midpoint_paths[m].speed_limit
-            print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR at speed_limit $speed_limit\n")
-
-            target_velocity = speed_limit
-            if (stop_sign in midpoint_paths[m-1].lane_types)
-                stop = 0
-                print("stop added for midpath")
-                m += 1
-                continue
+        try
+            if (iterateMidPath(ego, midpoint_paths[m]) )
+                if( merge_to_loading_zone == 0 )
+                    print("changed mid path from \n")
+                    oldMidP = midpoint_paths[m-1].midP
+                    oldMidQ = midpoint_paths[m-1].midQ
+                    newMidP = midpoint_paths[m].midP
+                    newMidQ = midpoint_paths[m].midQ
+                    averageR = 1/midpoint_paths[m].avg_curvature
+                    speed_limit = midpoint_paths[m].speed_limit
+                    print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR at speed_limit $speed_limit\n")
+    
+                    target_velocity = speed_limit
+                    if (stop_sign in midpoint_paths[m-1].lane_types)
+                        stop = 0
+                        print("stop added for midpath")
+                        m += 1
+                        continue
+                    end
+    
+                    m += 1
+                else 
+                    print("changed mid path from \n")
+                    oldMidP = midpoint_paths[length(midpoint_paths)-1].midP
+                    oldMidQ = midpoint_paths[length(midpoint_paths)-1].midQ
+                    newMidP = midpoint_paths[length(midpoint_paths)].midP
+                    newMidQ = midpoint_paths[length(midpoint_paths)].midQ
+                    averageR = 1/midpoint_paths[length(midpoint_paths)].avg_curvature
+                    speed_limit = midpoint_paths[length(midpoint_paths)].speed_limit
+                    print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR at speed_limit $speed_limit\n")
+    
+                    target_velocity = speed_limit
+                    if (stop_sign in midpoint_paths[length(midpoint_paths)-1].lane_types)
+                        stop = 0
+                        print("stop added for midpath")
+                        m += 1
+                        continue
+                    end
+    
+                    m += 1
+                end 
+    
             end
-
-            m += 1
+        catch e
+            @info "pathing err $e"
         end
+
+        
 
         len = length(midpoint_paths)
-        if (m > len)
-            cmd = VehicleCommand(0, 0, fetch(quit_channel))
-            serialize(socket, cmd)
-            take!(quit_channel)
-            put!(quit_channel, true) 
-            @info "Terminating Auto Client."
-            continue
-        end
-        
+        if (m > len) 
+            if(merge_to_loading_zone > 17)     
+                cmd = VehicleCommand(0, 0, fetch(quit_channel))
+                serialize(socket, cmd)
+                take!(quit_channel)
+                put!(quit_channel, true) 
+                @info "Terminating Auto Client."
+                continue
+            else 
+                @info "entering loading zone"
+                merge_to_loading_zone += 1
+            end
+        end 
         if (!first_iter)
             init_error = error
         end
-        error = CTE(ego, midpoint_paths[m-1])
+
+        if(merge_to_loading_zone == 0)
+            error = CTE(ego, midpoint_paths[m-1])  
+        else
+            @info "End Goal spec cond"
+            error = CTE(ego, midpoint_paths[length(midpoint_paths)]) 
+        end
+        
         sum_error += error
 
         if (first_iter)
@@ -356,7 +435,7 @@ function path_planning(
         cmd = VehicleCommand(steering_angle, target_velocity, !fetch(quit_channel))
         serialize(socket, cmd)
         
-        @info "Vehicle cmd sent $cmd"
+        #@info "Vehicle cmd sent $cmd"
     end 
         
 end

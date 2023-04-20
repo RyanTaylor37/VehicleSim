@@ -58,6 +58,8 @@ function server(max_vehicles=1,
     cmd_channels = Dict(id=>Channel{VehicleCommand}(1) for id in 1:max_vehicles)
     meas_channels = Dict(id=>Channel{MeasurementMessage}(1) for id in 1:max_vehicles)
     
+    map_end = map[40]
+    @info "end road segment: $map_end"
     ##### SHUTDOWn Channel #####
     shutdown_channel = Channel{Bool}(1)
 
